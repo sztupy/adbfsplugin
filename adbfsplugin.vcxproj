@@ -130,10 +130,10 @@
       <LinkDLL>true</LinkDLL>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
-      <OutputFile>Debug/fsplugin.wfx</OutputFile>
+      <OutputFile>Debug/adbfsplugin.wfx</OutputFile>
       <ImportLibrary>.\Debug\fsplugin.lib</ImportLibrary>
       <AdditionalDependencies>odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <ModuleDefinitionFile>.\fsplugin.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>.\adbfsplugin.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

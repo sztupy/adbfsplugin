@@ -2,13 +2,13 @@
 //
 
 #include "stdafx.h"
-#include "fsplugin.h"
+#include "adbfsplugin.h"
 #include "cunicode.h"
 
 #define pluginrootlen 1
 
 HANDLE hinst;
-char inifilename[MAX_PATH]="fsplugin.ini";  // Unused in this plugin, may be used to save data
+char inifilename[MAX_PATH]="adbfsplugin.ini";  // Unused in this plugin, may be used to save data
 
 char* strlcpy(char* p,char*p2,int maxlen)
 {
@@ -522,7 +522,7 @@ void __stdcall FsStatusInfo(char* RemoteDir,int InfoStartEnd,int InfoOperation)
 
 void __stdcall FsGetDefRootName(char* DefRootName,int maxlen)
 {
-	strlcpy(DefRootName,"Drives",maxlen);
+	strlcpy(DefRootName,"Android",maxlen);
 }
 
 int __stdcall FsExtractCustomIconW(WCHAR* RemoteName,int ExtractFlags,HICON* TheIcon)

@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "fsplugin.h"
+#include "adbfsplugin.h"
 #include "cunicode.h"
 
 extern tProgressProc ProgressProc;

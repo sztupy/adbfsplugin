@@ -1,3 +1,8 @@
 *.ncb
 *.suo
+*.aps
+*.opensdf
+*.sdf
+*.user
+ipch
 Debug

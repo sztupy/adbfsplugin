@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 11.00
 # Visual Studio 2010
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "adbfsplugin", "fsplugin.vcxproj", "{D1438A08-5127-0495-82F7-2CAE69113CB6}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "adbfsplugin", "adbfsplugin.vcxproj", "{48B8DC3F-6A03-5DDC-B3C2-32EDAA5A27D4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -9,10 +9,10 @@ Global
 		Release|Win32 = Release|Win32
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{D1438A08-5127-0495-82F7-2CAE69113CB6}.Debug|Win32.ActiveCfg = Debug|Win32
-		{D1438A08-5127-0495-82F7-2CAE69113CB6}.Debug|Win32.Build.0 = Debug|Win32
-		{D1438A08-5127-0495-82F7-2CAE69113CB6}.Release|Win32.ActiveCfg = Release|Win32
-		{D1438A08-5127-0495-82F7-2CAE69113CB6}.Release|Win32.Build.0 = Release|Win32
+		{48B8DC3F-6A03-5DDC-B3C2-32EDAA5A27D4}.Debug|Win32.ActiveCfg = Debug|Win32
+		{48B8DC3F-6A03-5DDC-B3C2-32EDAA5A27D4}.Debug|Win32.Build.0 = Debug|Win32
+		{48B8DC3F-6A03-5DDC-B3C2-32EDAA5A27D4}.Release|Win32.ActiveCfg = Release|Win32
+		{48B8DC3F-6A03-5DDC-B3C2-32EDAA5A27D4}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
