@@ -72,15 +72,15 @@ bool PipeHandler::WriteWLine(wstring w) {
 
 /* Get adbfsplugin  directory, and replace dll with adb.exe */
 
-LPWSTR __adb__filename = NULL;
-LPWSTR GetAdbFileName() {
+LPSTR __adb__filename = NULL;
+LPSTR GetAdbFileName() {
 	if (__adb__filename) return __adb__filename;
 	
-	__adb__filename = new WCHAR[1024];
-	GetModuleFileNameW( GetModuleHandle("adbfsplugin.wfx"), __adb__filename, 1024 );
+	__adb__filename = new char[1024];
+	GetModuleFileName( GetModuleHandle("adbfsplugin.wfx"), __adb__filename, 1024 );
 	FILE* f = fopen("d:\\log.txt","w+");fprintf(f,"%ls",__adb__filename);fclose(f);
-	LPWSTR filename = PathFindFileNameW(__adb__filename);
-	wcscpy_s(filename,16,L"adb.exe");
+	LPSTR filename = PathFindFileName(__adb__filename);
+	strcpy_s(filename,16,"adb.exe");
 	return __adb__filename;
 }
 
@@ -88,23 +88,25 @@ LPWSTR GetAdbFileName() {
 
 PipeHandler* RunCommand(LPCWSTR command) {
 	PROCESS_INFORMATION piProcInfo;
-	STARTUPINFOW siStartInfo;
+	STARTUPINFO siStartInfo;
 	
 	ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
 	ZeroMemory(&siStartInfo, sizeof(STARTUPINFOW));
 
 	PipeHandler* ph = new PipeHandler();
 
-	siStartInfo.cb = sizeof(STARTUPINFOW);
+	siStartInfo.cb = sizeof(STARTUPINFO);
 	siStartInfo.hStdError = ph->stderr_wr;
 	siStartInfo.hStdOutput = ph->stdout_wr;
 	siStartInfo.hStdInput = ph->stdin_rd;
 
 	siStartInfo.dwFlags |= STARTF_USESTDHANDLES;
 
-	WCHAR* comm = new WCHAR[wcslen(command)+1];
-	wcscpy(comm,command);
-	BOOL retval = CreateProcessW(GetAdbFileName(),comm,NULL,NULL,TRUE,CREATE_NO_WINDOW|CREATE_UNICODE_ENVIRONMENT,NULL,NULL,&siStartInfo,&piProcInfo);
+	
+	int sizeneeded = WideCharToMultiByte(CP_UTF8,0,command,-1,NULL,0,NULL,NULL);
+	char* comm = new char[sizeneeded+1];
+	WideCharToMultiByte(CP_UTF8,0,command,-1,comm,sizeneeded+1,NULL,NULL);
+	BOOL retval = CreateProcess(GetAdbFileName(),comm,NULL,NULL,TRUE,CREATE_NO_WINDOW|CREATE_UNICODE_ENVIRONMENT,NULL,NULL,&siStartInfo,&piProcInfo);
 	delete comm;
 	if ( ! retval ) {
 		delete ph;
