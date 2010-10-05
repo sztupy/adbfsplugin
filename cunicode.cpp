@@ -1,6 +1,5 @@
 #include "stdafx.h"
 #include "adbfsplugin.h"
-#include "cunicode.h"
 
 extern tProgressProc ProgressProc;
 extern tLogProc LogProc;
@@ -25,7 +24,7 @@ BOOL usys()
 	return (usysychecked==1);
 }
 
-char* walcopy(char* outname,WCHAR* inname,int maxlen)
+char* walcopy(char* outname,const WCHAR* inname,int maxlen)
 {
 	if (inname) {
 		WideCharToMultiByte(CP_ACP,0,inname,-1,outname,maxlen,NULL,NULL);

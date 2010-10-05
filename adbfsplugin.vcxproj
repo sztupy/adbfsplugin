@@ -132,11 +132,12 @@
       <SubSystem>Console</SubSystem>
       <OutputFile>Debug/adbfsplugin.wfx</OutputFile>
       <ImportLibrary>.\Debug\fsplugin.lib</ImportLibrary>
-      <AdditionalDependencies>odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>odbc32.lib;odbccp32.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>.\adbfsplugin.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="adbhandler.cpp" />
     <ClCompile Include="cunicode.cpp" />
     <ClCompile Include="adbfsplugin.cpp" />
     <ClCompile Include="StdAfx.cpp">
@@ -154,6 +155,7 @@
     <CustomBuild Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="adbhandler.h" />
     <ClInclude Include="cunicode.h" />
     <ClInclude Include="adbfsplugin.h" />
     <ClInclude Include="StdAfx.h" />

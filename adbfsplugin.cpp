@@ -3,9 +3,12 @@
 
 #include "stdafx.h"
 #include "adbfsplugin.h"
+#include "adbhandler.h"
 #include "cunicode.h"
 
 #define pluginrootlen 1
+
+using namespace std;
 
 HANDLE hinst;
 char inifilename[MAX_PATH]="adbfsplugin.ini";  // Unused in this plugin, may be used to save data
@@ -37,6 +40,7 @@ tRequestProc RequestProc=NULL;
 tProgressProcW ProgressProcW=NULL;
 tLogProcW LogProcW=NULL;
 tRequestProcW RequestProcW=NULL;
+map<wstring,FileData> cacheMap;
 
 int __stdcall FsInit(int PluginNr,tProgressProc pProgressProc,tLogProc pLogProc,tRequestProc pRequestProc)
 {
@@ -62,48 +66,45 @@ typedef struct {
 	HANDLE searchhandle;
 } tLastFindStuct,*pLastFindStuct;
 
+typedef struct {
+	list<FileData*>* result;
+	wstring path;
+	int origlength;
+} FindDataHandle;
+
 HANDLE __stdcall FsFindFirstW(WCHAR* Path,WIN32_FIND_DATAW *FindData)
 {
-	WCHAR buf[wdirtypemax];
-	pLastFindStuct lf;
-	
-	memset(FindData,0,sizeof(WIN32_FIND_DATAW));
-	if (wcscmp(Path,L"\\")==0) {
-		FindData->dwFileAttributes=FILE_ATTRIBUTE_DIRECTORY;
-		FindData->ftLastWriteTime.dwHighDateTime=0xFFFFFFFF;
-		FindData->ftLastWriteTime.dwLowDateTime=0xFFFFFFFE;
-		lf=(pLastFindStuct)malloc(sizeof(tLastFindStuct));
-		wcslcpy(lf->PathW,Path,countof(lf->PathW)-1);
-		lf->searchhandle=INVALID_HANDLE_VALUE;
-		char ch='A';
-		wcscpy(buf,L"A:\\");
-		while (GetDriveTypeW(buf)==DRIVE_NO_ROOT_DIR && ch<'Z'+1) {
-			ch++;
-			buf[0]=ch;
-		}
-		buf[2]=0;
-		if (ch<='Z') {
-			wcslcpy(lf->LastFoundNameW,buf,countof(lf->LastFoundNameW)-1);
-			wcslcpy(FindData->cFileName,buf,countof(FindData->cFileName)-1);
-			return (HANDLE)lf;
-		} else {
-			free(lf);
-			return INVALID_HANDLE_VALUE;
-		}
-	} else {
-		wcslcpy(buf,Path+pluginrootlen,countof(buf)-5);
-		wcslcat(buf,L"\\*.*",countof(buf)-1);
-		HANDLE hdnl=FindFirstFileT(buf,FindData);
-		if (hdnl==INVALID_HANDLE_VALUE)
-			return INVALID_HANDLE_VALUE;
-		else {
-			lf=(pLastFindStuct)malloc(sizeof(tLastFindStuct));
-			wcslcpy(lf->PathW,buf,countof(lf->PathW)-1);
-			lf->searchhandle=hdnl;
-			return (HANDLE)lf;
+	cacheMap.clear();
+	wstring path = Path;
+	for (auto iter = path.begin(); iter != path.end(); iter++) {
+		if ((*iter)==L'\\') {
+			*iter = L'/';
 		}
 	}
-	return INVALID_HANDLE_VALUE;
+	if (path.back()!=L'/') {
+		path.push_back(L'/');
+	}
+	list<FileData*>* result = DirList(path);
+	memset(FindData,0,sizeof(WIN32_FIND_DATAW));
+	if (result->empty()) {
+		SetLastError(ERROR_NO_MORE_FILES);
+		return INVALID_HANDLE_VALUE;
+	} else {
+		for (auto i = result->begin(); i!= result->end(); i++) {
+			cacheMap[wstring((*i)->cache_name)] = **i;
+		}
+		FindDataHandle * r = new FindDataHandle;
+		r->path = path;
+
+		FileData* back = result->back();
+		result->pop_back();
+		GetStat(FindData,back);
+		delete back;
+
+		r->result = result;
+		r->origlength = result->size();
+		return r;
+	}
 }
 
 HANDLE __stdcall FsFindFirst(char* Path,WIN32_FIND_DATA *FindData)
@@ -118,35 +119,17 @@ HANDLE __stdcall FsFindFirst(char* Path,WIN32_FIND_DATA *FindData)
 
 BOOL __stdcall FsFindNextW(HANDLE Hdl,WIN32_FIND_DATAW *FindData)
 {
-	WCHAR buf[wdirtypemax];
-	pLastFindStuct lf;
-
-	if ((int)Hdl==1)
+	FindDataHandle* r = (FindDataHandle*)(Hdl);
+	list<FileData*>* result = r->result;
+	if (result->empty()) {
 		return false;
-
-	lf=(pLastFindStuct)Hdl;
-	if (lf->searchhandle==INVALID_HANDLE_VALUE) {   // drive list!
-		char ch=(char)lf->LastFoundNameW[0];
-		wcscpy(buf,L"A:\\");
-		buf[0]=ch+1;
-		while (GetDriveTypeW(buf)==DRIVE_NO_ROOT_DIR && ch<'Z'+1) {
-			ch++;
-			buf[0]=ch;
-		}
-		buf[2]=0;
-		if (ch<='Z') {
-			wcslcpy(lf->LastFoundNameW,buf,countof(lf->LastFoundNameW)-1);
-			wcslcpy(FindData->cFileName,buf,countof(FindData->cFileName)-1);
-			return true;
-		} else {
-			return false;
-		}
-
 	} else {
-		lf=(pLastFindStuct)Hdl;
-		return FindNextFileT(lf->searchhandle,FindData);
+		FileData* str = result->back();
+		result->pop_back();
+		GetStat(FindData,str);
+		delete str;
+		return true;
 	}
-	return false;
 }
 
 BOOL __stdcall FsFindNext(HANDLE Hdl,WIN32_FIND_DATA *FindData)
@@ -163,13 +146,14 @@ int __stdcall FsFindClose(HANDLE Hdl)
 {
 	if ((int)Hdl==1)
 		return 0;
-	pLastFindStuct lf;
-	lf=(pLastFindStuct)Hdl;
-	if (lf->searchhandle!=INVALID_HANDLE_VALUE) {
-		FindClose(lf->searchhandle);
-		lf->searchhandle=INVALID_HANDLE_VALUE;
+	FindDataHandle* r = (FindDataHandle*)(Hdl);
+	list<FileData*>* result = r->result;
+	while (!result->empty()) {
+		delete result->back();
+		result->pop_back();
 	}
-	free(lf);
+	delete result;
+	delete r;
 	return 0;
 }
 
@@ -693,20 +677,21 @@ BOOL __stdcall FsGetLocalNameW(WCHAR* RemoteName,int maxlen)
 /*********************** content plugin = custom columns part! ************************/
 /**************************************************************************************/
 
-#define fieldcount 6
-char* fieldnames[fieldcount]={
-	"size","creationdate","writedate","accessdate","size-delayed","size-ondemand"};
+#define fieldcount 5
+char* fieldnames[fieldcount]={"mode","uid","gid","type","name"};
+	//"size","creationdate","writedate","accessdate","size-delayed","size-ondemand"};
 
-int fieldtypes[fieldcount]={
-		ft_numeric_64,ft_datetime,ft_datetime,ft_datetime,ft_numeric_64,ft_numeric_64};
+int fieldtypes[fieldcount]={ft_string,ft_numeric_32,ft_numeric_32,ft_string,ft_string};
+		//ft_numeric_64,ft_datetime,ft_datetime,ft_datetime,ft_numeric_64,ft_numeric_64};
 
-char* fieldunits_and_multiplechoicestrings[fieldcount]={
-		"bytes|kbytes|Mbytes|Gbytes","","","","bytes|kbytes|Mbytes|Gbytes","bytes|kbytes|Mbytes|Gbytes"};
+char* fieldunits_and_multiplechoicestrings[fieldcount]={"","","","",""};
+		//"bytes|kbytes|Mbytes|Gbytes","","","","bytes|kbytes|Mbytes|Gbytes","bytes|kbytes|Mbytes|Gbytes"};
 
-int fieldflags[fieldcount]={
-    contflags_substsize,contflags_edit,contflags_substdatetime,contflags_edit,contflags_substsize,contflags_substsize | contflags_edit};
+int fieldflags[fieldcount]={0,0,0,0,0};
+    //contflags_substsize,contflags_edit,contflags_substdatetime,contflags_edit,contflags_substsize,contflags_substsize | contflags_edit};
 
-int sortorders[fieldcount]={-1,-1,-1,-1,-1,-1};
+int sortorders[fieldcount]={-1,-1,-1,-1,-1};
+	//-1,-1,-1,-1,-1,-1};
 
 
 int __stdcall FsContentGetSupportedField(int FieldIndex,char* FieldName,char* Units,int maxlen)
@@ -724,52 +709,59 @@ int __stdcall FsContentGetValueT(BOOL unicode,WCHAR* FileName,int FieldIndex,int
 	HANDLE fh;
 	__int64 filesize;
 
-	if (wcslen(FileName+pluginrootlen)<=3)
-		return ft_fileerror;
-
-	if (flags & CONTENT_DELAYIFSLOW) {
-		if (FieldIndex==4)
-			return ft_delayed;
-		if (FieldIndex==5)
-			return ft_ondemand;
+	wstring path = FileName;
+	for (auto iter = path.begin(); iter != path.end(); iter++) {
+		if ((*iter)==L'\\') {
+			*iter = L'/';
+		}
 	}
 
-	fh=FindFirstFileT(FileName+pluginrootlen,&fd);
-	if (fh!=INVALID_HANDLE_VALUE) {
-		FindClose(fh);
+	if (cacheMap.find(path) != cacheMap.end()) {
+		FileData* fd = &cacheMap[path];
 		switch (FieldIndex) {
-		case 0:  // "size"
-		case 4:  // "size-delayed"
-		case 5:  // "size-ondemand"
-			filesize=fd.nFileSizeHigh;
-			filesize=(filesize<<32) + fd.nFileSizeLow;
-			switch (UnitIndex) {
-			case 1:
-				filesize/=1024;
-				break;
-			case 2:
-				filesize/=(1024*1024);
-				break;
-			case 3:
-				filesize/=(1024*1024*1024);
+		case 0: {
+				char* text = (char*)FieldValue;
+				strcpy(text,"--- --- ---");
+				if (fd->mode & 0400) { text[0]='r'; }
+				if (fd->mode & 0200) { text[1]='w'; }
+				if (fd->mode & 0100) { text[2]='x'; }
+				if (fd->mode & 040) { text[4]='r'; }
+				if (fd->mode & 020) { text[5]='w'; }
+				if (fd->mode & 010) { text[6]='x'; }
+				if (fd->mode & 04) { text[8]='r'; }
+				if (fd->mode & 02) { text[9]='w'; }
+				if (fd->mode & 01) { text[10]='x'; }
+			}
+			break;
+		case 1:
+			*(int*)FieldValue = fd->uid;
+			break;
+		case 2:
+			*(int*)FieldValue = fd->gid;
+			break;
+		case 3: {
+				char* text = (char*)FieldValue;
+				if (fd->type==REGFILE) {
+					strcpy(text,"file");
+				} else if (fd->type==DIRECTORY) {
+					strcpy(text,"dir");
+				} else if (fd->type==LINK) {
+					strcpy(text,"link");
+				} else {
+					strcpy(text,"other");
+				}
 				break;
 			}
-			*(__int64*)FieldValue=filesize;
+		case 4: {
+			walcopy((char*)FieldValue,fd->alt_name.c_str(),maxlen);
 			break;
-		case 1:  // "creationdate"
-			*(FILETIME*)FieldValue=fd.ftCreationTime;
-			break;
-		case 2:  // "writedate"
-			*(FILETIME*)FieldValue=fd.ftLastWriteTime;
-			break;
-		case 3:  // "accessdate"
-			*(FILETIME*)FieldValue=fd.ftLastAccessTime;
-			break;
+			}
 		default:
 			return ft_nosuchfield;
 		}
-	} else
+	} else {
 		return ft_fileerror;
+	}
 	return fieldtypes[FieldIndex];  // very important!
 }
 
@@ -804,9 +796,9 @@ int __stdcall FsContentGetDefaultSortOrder(int FieldIndex)
 
 BOOL __stdcall FsContentGetDefaultView(char* ViewContents,char* ViewHeaders,char* ViewWidths,char* ViewOptions,int maxlen)
 {
-	strlcpy(ViewContents,"[=<fs>.size.bkM2]\\n[=tc.size.bkM2]",maxlen);  // separated by backslash and n, not new lines!
-	strlcpy(ViewHeaders,"fs-size\\ntc-size",maxlen);  // titles in ENGLISH also separated by backslash and n, not new lines!
-	strlcpy(ViewWidths,"148,23,-35,-35",maxlen);
+	strlcpy(ViewContents,"[=tc.size]\\n[=<fs>.mode]\\n[=<fs>.uid]\\n[=<fs>.gid]\\n[=<fs>.type]\\n[=<fs>.name]",maxlen);  // separated by backslash and n, not new lines!
+	strlcpy(ViewHeaders,"size\\nmode\\nuid\\ngid\\ntype\\nname",maxlen);  // titles in ENGLISH also separated by backslash and n, not new lines!
+	strlcpy(ViewWidths,"148,23,-35,40,-18,-18,16,148",maxlen);
 	strlcpy(ViewOptions,"-1|0",maxlen);  // auto-adjust-width, or -1 for no adjust | horizonal scrollbar flag
 	return true;
 }
@@ -824,7 +816,7 @@ int __stdcall FsContentSetValueW(WCHAR* FileName,int FieldIndex,int UnitIndex,in
 
 	if (FieldIndex<0 || FieldIndex>=fieldcount)
 		return ft_nosuchfield;
-	else if (fieldflags[FieldIndex] & 1==0)
+	else if ((fieldflags[FieldIndex] & 1)==0)
 		return ft_nosuchfield;
 	else {
 		switch (FieldIndex) {

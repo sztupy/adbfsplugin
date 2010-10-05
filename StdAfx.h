@@ -17,6 +17,12 @@
 #include <windows.h>
 #include <stdlib.h>
 #include <shellapi.h>
+#include <shlwapi.h>
+#include <string>
+#include <vector>
+#include <list>
+#include <map>
+#include "cunicode.h"
 
 // TODO: reference additional headers your program requires here
 
