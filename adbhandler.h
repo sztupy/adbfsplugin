@@ -1,5 +1,18 @@
 #include "StdAfx.h"
 
+class AdbCommunicator {
+public:
+	static AdbCommunicator* instance() { if (!_global_adb) _global_adb = new AdbCommunicator(); return _global_adb; };
+	std::wstring* ReadLineW();
+	void PushCommandW(std::wstring command);
+private:
+	AdbCommunicator();
+	~AdbCommunicator() {};
+	void ReConnect();
+	SOCKET s;
+	static AdbCommunicator* _global_adb;
+};
+
 enum FileTypeEnum {
 	REGFILE, DIRECTORY, LINK, OTHER
 };

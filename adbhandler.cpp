@@ -3,6 +3,10 @@
 
 using namespace std;
 
+/* -------------------------------
+   ---- Some helper functions ----
+   ------------------------------- */
+
 #define EPOCH_DIFF 0x019DB1DED53E8000LL /* 116444736000000000 nsecs */
 #define RATE_DIFF 10000000 /* 100 nsecs */
 /* Convert a UNIX time_t into a Windows filetime_t */
@@ -15,14 +19,11 @@ unsigned int fileTimeToUnixTime(__int64 ftime) {
         unsigned int tconv = (ftime - EPOCH_DIFF) / RATE_DIFF;
         return (time_t)tconv;
 }
-
 string trim( string const& str, const char* sepSet)
 {
 	std::string::size_type const first = str.find_first_not_of(sepSet);
 	return ( first==std::string::npos ) ? std::string() : str.substr(first, str.find_last_not_of(sepSet)-first+2);
 }
-
-
 /* Get adbfsplugin  directory, and replace dll with adb.exe */
 
 LPSTR __adb__filename = NULL;
@@ -37,9 +38,26 @@ LPSTR GetAdbFileName() {
 	return __adb__filename;
 }
 
-/* Run Command */
+/* ---------------------------
+   ---- Adb Communicator -----
+   --------------------------- */
 
-SOCKET RunCommand(LPCWSTR command) {
+AdbCommunicator* AdbCommunicator::_global_adb = 0;
+
+AdbCommunicator::AdbCommunicator() {
+	PROCESS_INFORMATION piProcInfo;
+	STARTUPINFO siStartInfo;
+	ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
+	ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
+	siStartInfo.cb = sizeof(STARTUPINFO);
+
+	BOOL retval = CreateProcess(GetAdbFileName(),"adb.exe start-server",NULL,NULL,TRUE,CREATE_NO_WINDOW|CREATE_UNICODE_ENVIRONMENT,NULL,NULL,&siStartInfo,&piProcInfo);
+	if (!retval) {
+		throw wstring(L"<0000 - Could not start ADB server>");
+	}
+}
+
+void AdbCommunicator::PushCommandW(wstring command) {
 	struct addrinfo *result = NULL, *ptr = NULL, hints;
 	ZeroMemory(&hints, sizeof(hints));
 	hints.ai_family = AF_INET;
@@ -50,7 +68,7 @@ SOCKET RunCommand(LPCWSTR command) {
 		throw wstring(L"<0007 - localhost not found>");
 	}
 	ptr = result;
-	SOCKET s = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+	s = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
 	if (s==INVALID_SOCKET) {
 		throw wstring(L"<0006 - socket initialization failed>");
 	}
@@ -91,9 +109,9 @@ SOCKET RunCommand(LPCWSTR command) {
 
 	// adb is now switched to usb transport mode, send command
 	
-	int sizeneeded = WideCharToMultiByte(CP_UTF8,0,command,-1,NULL,0,NULL,NULL);
+	int sizeneeded = WideCharToMultiByte(CP_UTF8,0,command.c_str(),-1,NULL,0,NULL,NULL);
 	char* comm = new char[sizeneeded+1];
-	WideCharToMultiByte(CP_UTF8,0,command,-1,comm,sizeneeded+1,NULL,NULL);
+	WideCharToMultiByte(CP_UTF8,0,command.c_str(),-1,comm,sizeneeded+1,NULL,NULL);
 	
 	int size = strlen(comm);
 	char* sdat = new char[5+size];
@@ -122,10 +140,9 @@ SOCKET RunCommand(LPCWSTR command) {
 	}
 
 	//shutdown(s, SD_SEND);
-	return s;
 };
 
-wstring* ReadLineFromSocket(SOCKET s) {
+wstring* AdbCommunicator::ReadLineW() {
 	string input = "";
 	DWORD bytesRead;
 	char a;
@@ -150,6 +167,10 @@ wstring* ReadLineFromSocket(SOCKET s) {
 	return new wstring(output,wide-1);
 }
 
+/* ---------------------------
+   ---- FileData Helpers -----
+   --------------------------- */
+
 void FillStat(wstring directory, list<FileData*>* fd) {
 	try {
 		wstring command = L"shell:command busybox stat -c \"%a -%F- %g %u %s %X %Y %Z %N\" ";
@@ -159,8 +180,8 @@ void FillStat(wstring directory, list<FileData*>* fd) {
 			command.append((*i)->name);
 			command.append(L"\"");
 		}
-		SOCKET s = RunCommand(command.c_str());
-		wstring* line = ReadLineFromSocket(s);
+		AdbCommunicator::instance()->PushCommandW(command);
+		wstring* line = AdbCommunicator::instance()->ReadLineW();
 		auto i = fd->begin();
 		while ((line!=NULL) && (i!=fd->end())) {
 			(*i)->cache_name = directory+(*i)->name;
@@ -194,7 +215,7 @@ void FillStat(wstring directory, list<FileData*>* fd) {
 				}
 				(*i)->alt_name = name;
 			}
-			line = ReadLineFromSocket(s);
+			line = AdbCommunicator::instance()->ReadLineW();
 			i++;
 		}
 	} catch (wstring e) {
@@ -216,12 +237,12 @@ void GetStat(WIN32_FIND_DATAW* fs, FileData* fd) {
 list<FileData*>* DirList(wstring filename) {
 	auto* result = new list<FileData*>();
 	try {
-		SOCKET s = RunCommand((wstring(L"shell:command busybox ls --color=never -1 ") + filename).c_str());
-		wstring* line = ReadLineFromSocket(s);
+		AdbCommunicator::instance()->PushCommandW((wstring(L"shell:command busybox ls --color=never -1 ") + filename).c_str());
+		wstring* line = AdbCommunicator::instance()->ReadLineW();
 		while (line!=NULL) {
 			result->push_back(new FileData(*line));
 			delete line;
-			line = ReadLineFromSocket(s);
+			line = AdbCommunicator::instance()->ReadLineW();
 		}
 	} catch (wstring e) {
 		result->push_back(new FileData(e));
