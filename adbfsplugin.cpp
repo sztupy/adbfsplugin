@@ -48,7 +48,7 @@ int __stdcall FsInit(int PluginNr,tProgressProc pProgressProc,tLogProc pLogProc,
     LogProc=pLogProc;
     RequestProc=pRequestProc;
 	PluginNumber=PluginNr;
-	return 0;
+	return WSAStartup(MAKEWORD(2,2), &wsaData);
 }
 
 int __stdcall FsInitW(int PluginNr,tProgressProcW pProgressProcW,tLogProcW pLogProcW,tRequestProcW pRequestProcW)
@@ -57,7 +57,7 @@ int __stdcall FsInitW(int PluginNr,tProgressProcW pProgressProcW,tLogProcW pLogP
     LogProcW=pLogProcW;
     RequestProcW=pRequestProcW;
 	PluginNumber=PluginNr;
-	return 0;
+	return WSAStartup(MAKEWORD(2,2), &wsaData);
 }
 
 typedef struct {

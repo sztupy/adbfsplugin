@@ -15,6 +15,8 @@
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
 
 #include <windows.h>
+#include <WinSock2.h>
+#include <ws2tcpip.h>
 #include <stdlib.h>
 #include <shellapi.h>
 #include <shlwapi.h>
@@ -24,6 +26,7 @@
 #include <map>
 #include "cunicode.h"
 
+extern WSADATA wsaData;
 // TODO: reference additional headers your program requires here
 
 //{{AFX_INSERT_LOCATION}}

@@ -1,22 +1,5 @@
 #include "StdAfx.h"
 
-class PipeHandler {
-public:
-	PipeHandler();
-	~PipeHandler();
-
-	std::wstring* ReadWLine();
-	bool WriteWLine(std::wstring w);
-
-friend PipeHandler* RunCommand(LPCWSTR command);
-
-private:
-	PROCESS_INFORMATION inf;
-	HANDLE stdin_rd, stdin_wr;
-	HANDLE stdout_rd, stdout_wr;
-	HANDLE stderr_rd, stderr_wr;
-};
-
 enum FileTypeEnum {
 	REGFILE, DIRECTORY, LINK, OTHER
 };
@@ -37,6 +20,5 @@ public:
 	std::wstring cache_name;
 };
 
-PipeHandler* RunCommand(LPCWSTR command);
 std::list<FileData*>* DirList(std::wstring filename);
 void GetStat(WIN32_FIND_DATAW* fs, FileData* fd);

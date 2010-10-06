@@ -3,70 +3,23 @@
 
 using namespace std;
 
-PipeHandler::PipeHandler()
-{
-	SECURITY_ATTRIBUTES saAttr;
-	ZeroMemory(&inf, sizeof(PROCESS_INFORMATION));
-	ZeroMemory(&saAttr, sizeof(SECURITY_ATTRIBUTES));
-	saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
-	saAttr.bInheritHandle = TRUE;
-	saAttr.lpSecurityDescriptor = NULL;
-	stdout_rd = NULL;
-	stdout_wr = NULL;
-	stdin_rd = NULL;
-	stdin_wr = NULL;
-	stderr_rd = NULL;
-	stderr_wr = NULL;
-	BOOL retval = CreatePipe(&stdout_rd, &stdout_wr, &saAttr, 0);
-	retval = retval && SetHandleInformation(stdout_rd,HANDLE_FLAG_INHERIT,0);
-	retval = retval && CreatePipe(&stdin_rd, &stdin_wr, &saAttr, 0);
-	retval = retval && SetHandleInformation(stdin_wr,HANDLE_FLAG_INHERIT,0);
-	retval = retval && CreatePipe(&stderr_rd, &stderr_wr, &saAttr, 0);
-	retval = retval && SetHandleInformation(stderr_rd,HANDLE_FLAG_INHERIT,0);
-	if (! retval) {
-		throw wstring(L"<0001 - Handle generation failed>");
-	}
+#define EPOCH_DIFF 0x019DB1DED53E8000LL /* 116444736000000000 nsecs */
+#define RATE_DIFF 10000000 /* 100 nsecs */
+/* Convert a UNIX time_t into a Windows filetime_t */
+__int64 unixTimeToFileTime(unsigned int utime) {
+        __int64 tconv = ((__int64)utime * RATE_DIFF) + EPOCH_DIFF;
+        return tconv;
 }
-
-PipeHandler::~PipeHandler() {
-/*	if (stdout_rd) CloseHandle(&stdout_rd);
-	if (stdout_wr) CloseHandle(&stdout_wr);
-	if (stdin_wr) CloseHandle(&stdin_wr);
-	if (stdin_rd) CloseHandle(&stdin_rd);
-	if (stderr_rd) CloseHandle(&stderr_rd);
-	if (stderr_wr) CloseHandle(&stderr_wr);
-
-	if (inf.hProcess) CloseHandle(inf.hProcess);
-	if (inf.hThread) CloseHandle(inf.hThread);*/
+/* Convert a Windows filetime_t into a UNIX time_t */
+unsigned int fileTimeToUnixTime(__int64 ftime) {
+        unsigned int tconv = (ftime - EPOCH_DIFF) / RATE_DIFF;
+        return (time_t)tconv;
 }
 
 string trim( string const& str, const char* sepSet)
 {
 	std::string::size_type const first = str.find_first_not_of(sepSet);
 	return ( first==std::string::npos ) ? std::string() : str.substr(first, str.find_last_not_of(sepSet)-first+2);
-}
-
-wstring* PipeHandler::ReadWLine() {
-	string input = "";
-	DWORD bytesRead;
-	char a;
-	BOOL bResult = ReadFile(stdout_rd, &a, 1, &bytesRead, NULL);
-	while (bResult && (bytesRead!=0) && (a!='\n')) {
-		input += a;
-		bResult = ReadFile(stdout_rd, &a, 1, &bytesRead, NULL);
-	}
-	if (input.empty()) {
-		return NULL;
-	}
-	input = trim(input," \t\r\n");
-	int wide = MultiByteToWideChar(CP_UTF8, 0, input.c_str(), input.length(), NULL, 0);
-	LPWSTR output = new wchar_t[wide];
-	MultiByteToWideChar(CP_UTF8, 0, input.c_str(), input.length(), output, wide);
-	return new wstring(output,wide-1);
-}
-
-bool PipeHandler::WriteWLine(wstring w) {
-	return false;
 }
 
 
@@ -86,59 +39,128 @@ LPSTR GetAdbFileName() {
 
 /* Run Command */
 
-PipeHandler* RunCommand(LPCWSTR command) {
-	PROCESS_INFORMATION piProcInfo;
-	STARTUPINFO siStartInfo;
-	
-	ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
-	ZeroMemory(&siStartInfo, sizeof(STARTUPINFOW));
+SOCKET RunCommand(LPCWSTR command) {
+	struct addrinfo *result = NULL, *ptr = NULL, hints;
+	ZeroMemory(&hints, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+		
+	if (getaddrinfo("127.0.0.1", "5037", &hints, &result)!=0) {
+		throw wstring(L"<0007 - localhost not found>");
+	}
+	ptr = result;
+	SOCKET s = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+	if (s==INVALID_SOCKET) {
+		throw wstring(L"<0006 - socket initialization failed>");
+	}
 
-	PipeHandler* ph = new PipeHandler();
+	if (connect(s, ptr->ai_addr, ptr->ai_addrlen) == SOCKET_ERROR) {
+		closesocket(s);
+		throw wstring(L"<0008 - could not connect to local adb server>");
+	}
 
-	siStartInfo.cb = sizeof(STARTUPINFO);
-	siStartInfo.hStdError = ph->stderr_wr;
-	siStartInfo.hStdOutput = ph->stdout_wr;
-	siStartInfo.hStdInput = ph->stdin_rd;
+	// switch to usb mode
+	char* sendstr = "0012host:transport-usb";
+	if (send(s, sendstr, 22, 0) == SOCKET_ERROR) {
+		closesocket(s);
+		throw wstring(L"<0009 - could not switch to usb mode>");
+	}
 
-	siStartInfo.dwFlags |= STARTF_USESTDHANDLES;
+	// get result
+	char recbuf[5];
+	recbuf[4]='\0';
+	int bytesRead = recv(s, recbuf, 4, MSG_WAITALL);
+	if ((bytesRead==SOCKET_ERROR) || (bytesRead!=4)) {
+		closesocket(s);
+		throw wstring(L"<000A - no ack data from adb server>");
+	}
+	if (strcmpi("FAIL",recbuf)==0) {
+		// cleanup
+		recv(s,recbuf,4,MSG_WAITALL);
+		int datalen;
+		sscanf_s(recbuf,"%x",&datalen);
+		char* data = new char[datalen+1];
+		recv(s,data,datalen,MSG_WAITALL);
+		closesocket(s);
+		throw wstring(L"<000B - FAIL response from adb server>");
+	} else if (strcmpi("OKAY",recbuf)!=0) {
+		closesocket(s);
+		throw wstring(L"<000C - Bad response from adb server>");
+	}
 
+	// adb is now switched to usb transport mode, send command
 	
 	int sizeneeded = WideCharToMultiByte(CP_UTF8,0,command,-1,NULL,0,NULL,NULL);
 	char* comm = new char[sizeneeded+1];
 	WideCharToMultiByte(CP_UTF8,0,command,-1,comm,sizeneeded+1,NULL,NULL);
-	BOOL retval = CreateProcess(GetAdbFileName(),comm,NULL,NULL,TRUE,CREATE_NO_WINDOW|CREATE_UNICODE_ENVIRONMENT,NULL,NULL,&siStartInfo,&piProcInfo);
-	delete comm;
-	if ( ! retval ) {
-		delete ph;
-		throw wstring(L"<0002 - ADB could not be started>");
+	
+	int size = strlen(comm);
+	char* sdat = new char[5+size];
+	sprintf_s(sdat,5+size,"%04x%s",size,comm);
+	if (send(s,sdat,4+size,0) == SOCKET_ERROR) {
+		closesocket(s);
+		throw wstring(L"<000D - Command send failed>");
 	}
-	retval = retval && CloseHandle(ph->stderr_wr);
-	retval = retval && CloseHandle(ph->stdout_wr);
-	retval = retval && CloseHandle(ph->stdin_rd);
-	ph->stderr_wr = NULL;
-	ph->stdout_wr = NULL;
-	ph->stdin_rd = NULL;
-	if ( ! retval ) {
-		delete ph;
-		throw wstring(L"<0003 - Pipe generation failed>");
+	bytesRead = recv(s, recbuf, 4, MSG_WAITALL);
+	if ((bytesRead==SOCKET_ERROR) || (bytesRead!=4)) {
+		closesocket(s);
+		throw wstring(L"<000A - no ack data from adb server>");
+	}
+	if (strcmpi("FAIL",recbuf)==0) {
+		// cleanup
+		recv(s,recbuf,4,MSG_WAITALL);
+		int datalen;
+		sscanf_s(recbuf,"%x",&datalen);
+		char* data = new char[datalen+1];
+		recv(s,data,datalen,MSG_WAITALL);
+		closesocket(s);
+		throw wstring(L"<000B - FAIL response from adb server>");
+	} else if (strcmpi("OKAY",recbuf)!=0) {
+		closesocket(s);
+		throw wstring(L"<000C - Bad response from adb server>");
 	}
 
-	ph->inf = piProcInfo;
-
-	return ph;
+	//shutdown(s, SD_SEND);
+	return s;
 };
+
+wstring* ReadLineFromSocket(SOCKET s) {
+	string input = "";
+	DWORD bytesRead;
+	char a;
+	bytesRead = recv(s,&a,1,MSG_WAITALL);
+	while ((bytesRead!=SOCKET_ERROR) && (bytesRead!=0) && (a!='\n')) {
+		input += a;
+		bytesRead = recv(s,&a,1,MSG_WAITALL);
+	}
+	if (bytesRead==SOCKET_ERROR) {
+		closesocket(s);
+		int d = WSAGetLastError();
+		throw wstring(L"Socket Error");
+	}
+	if (input.empty()) {
+		closesocket(s);
+		return NULL;
+	}
+	input = trim(input," \t\r\n");
+	int wide = MultiByteToWideChar(CP_UTF8, 0, input.c_str(), input.length(), NULL, 0);
+	LPWSTR output = new wchar_t[wide];
+	MultiByteToWideChar(CP_UTF8, 0, input.c_str(), input.length(), output, wide);
+	return new wstring(output,wide-1);
+}
 
 void FillStat(wstring directory, list<FileData*>* fd) {
 	try {
-		wstring command = L"adb.exe shell busybox stat -c \"%a -%F- %g %u %s %X %Y %Z %N\" ";
+		wstring command = L"shell:command busybox stat -c \"%a -%F- %g %u %s %X %Y %Z %N\" ";
 		for (auto i = fd->begin(); i != fd->end(); i++) {
 			command.append(L" \"");
 			command.append(directory);
 			command.append((*i)->name);
 			command.append(L"\"");
 		}
-		PipeHandler* ph = RunCommand(command.c_str());
-		wstring* line = ph->ReadWLine();
+		SOCKET s = RunCommand(command.c_str());
+		wstring* line = ReadLineFromSocket(s);
 		auto i = fd->begin();
 		while ((line!=NULL) && (i!=fd->end())) {
 			(*i)->cache_name = directory+(*i)->name;
@@ -172,10 +194,9 @@ void FillStat(wstring directory, list<FileData*>* fd) {
 				}
 				(*i)->alt_name = name;
 			}
-			line = ph->ReadWLine();
+			line = ReadLineFromSocket(s);
 			i++;
 		}
-		delete ph;
 	} catch (wstring e) {
 	}
 }
@@ -195,14 +216,13 @@ void GetStat(WIN32_FIND_DATAW* fs, FileData* fd) {
 list<FileData*>* DirList(wstring filename) {
 	auto* result = new list<FileData*>();
 	try {
-		PipeHandler* ph = RunCommand((wstring(L"adb.exe shell busybox ls --color=never -1 ") + filename).c_str());
-		wstring* line = ph->ReadWLine();
+		SOCKET s = RunCommand((wstring(L"shell:command busybox ls --color=never -1 ") + filename).c_str());
+		wstring* line = ReadLineFromSocket(s);
 		while (line!=NULL) {
 			result->push_back(new FileData(*line));
 			delete line;
-			line = ph->ReadWLine();
+			line = ReadLineFromSocket(s);
 		}
-		delete ph;
 	} catch (wstring e) {
 		result->push_back(new FileData(e));
 	}
