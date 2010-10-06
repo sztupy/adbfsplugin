@@ -55,9 +55,45 @@ AdbCommunicator::AdbCommunicator() {
 	if (!retval) {
 		throw wstring(L"<0000 - Could not start ADB server>");
 	}
+	s = INVALID_SOCKET;
+	_needsu = true;
 }
 
-void AdbCommunicator::PushCommandW(wstring command) {
+void AdbCommunicator::Close() {
+	closesocket(s);
+	s = INVALID_SOCKET;
+}
+
+void AdbCommunicator::SendStringToServer(char* str) {
+	if (send(s, str, strlen(str), 0) == SOCKET_ERROR) {
+		Close();
+		throw wstring(L"<0009 - could not switch to usb mode>");
+	}
+
+	// get result
+	char recbuf[5];
+	recbuf[4]='\0';
+	int bytesRead = recv(s, recbuf, 4, MSG_WAITALL);
+	if ((bytesRead==SOCKET_ERROR) || (bytesRead!=4)) {
+		Close();
+		throw wstring(L"<000A - no ack data from adb server>");
+	}
+	if (strcmpi("FAIL",recbuf)==0) {
+		// cleanup
+		recv(s,recbuf,4,MSG_WAITALL);
+		int datalen;
+		sscanf_s(recbuf,"%x",&datalen);
+		char* data = new char[datalen+1];
+		recv(s,data,datalen,MSG_WAITALL);
+		Close();
+		throw wstring(L"<000B - FAIL response from adb server>");
+	} else if (strcmpi("OKAY",recbuf)!=0) {
+		Close();
+		throw wstring(L"<000C - Bad response from adb server>");
+	}
+}
+
+void AdbCommunicator::ReConnect() {
 	struct addrinfo *result = NULL, *ptr = NULL, hints;
 	ZeroMemory(&hints, sizeof(hints));
 	hints.ai_family = AF_INET;
@@ -74,90 +110,93 @@ void AdbCommunicator::PushCommandW(wstring command) {
 	}
 
 	if (connect(s, ptr->ai_addr, ptr->ai_addrlen) == SOCKET_ERROR) {
-		closesocket(s);
+		Close();
 		throw wstring(L"<0008 - could not connect to local adb server>");
 	}
 
 	// switch to usb mode
-	char* sendstr = "0012host:transport-usb";
-	if (send(s, sendstr, 22, 0) == SOCKET_ERROR) {
-		closesocket(s);
-		throw wstring(L"<0009 - could not switch to usb mode>");
-	}
+	// TODO: multiple devices support
+	SendStringToServer("0012host:transport-usb");
+	// start shell
+	SendStringToServer("0006shell:");
 
-	// get result
-	char recbuf[5];
-	recbuf[4]='\0';
-	int bytesRead = recv(s, recbuf, 4, MSG_WAITALL);
-	if ((bytesRead==SOCKET_ERROR) || (bytesRead!=4)) {
-		closesocket(s);
-		throw wstring(L"<000A - no ack data from adb server>");
+	if (_needsu) {
+		// TODO: very hacky
+		Sleep(500); // let the shell start
+		CleanBuffer(false); // remove everything in buffer
+		char buf[4] = "su\n";
+		send(s,buf,3,0);
+		Sleep(50); // small timeout for the echo
+		CleanBuffer(false); // remove echo
+		CleanBuffer(true); // wait for root
+		// TODO: should check whether root failed or not
 	}
-	if (strcmpi("FAIL",recbuf)==0) {
-		// cleanup
-		recv(s,recbuf,4,MSG_WAITALL);
-		int datalen;
-		sscanf_s(recbuf,"%x",&datalen);
-		char* data = new char[datalen+1];
-		recv(s,data,datalen,MSG_WAITALL);
-		closesocket(s);
-		throw wstring(L"<000B - FAIL response from adb server>");
-	} else if (strcmpi("OKAY",recbuf)!=0) {
-		closesocket(s);
-		throw wstring(L"<000C - Bad response from adb server>");
-	}
+}
 
-	// adb is now switched to usb transport mode, send command
+void AdbCommunicator::CleanBuffer(bool timeout) {
+	TIMEVAL timeval;
+	timeval.tv_sec = 0;
+	timeval.tv_usec = 0;
+	fd_set set;
+	FD_ZERO(&set);
+	FD_SET(s, &set);
+	char buf[1024];
 	
+	// cleans input buffer
+	while (select(0, &set, NULL, NULL, (timeout)?NULL:&timeval)!=0) {
+		recv(s,buf,1024,0);
+		if (timeout) return;
+	}
+}
+
+void AdbCommunicator::PushCommandW(wstring command) {
+	if (s==INVALID_SOCKET) {
+		ReConnect();
+		Sleep(500); // wait for the shell to start
+	}
+
+	CleanBuffer(false);
+
+	// add some garbage data to determine where sending starts and where it stops
+	command = L"echo \"===adbfspluginÈ·\" ;" + command + L" ; echo \"===adbfspluginÈ·Ì\"";
+
+	// convert utf-16 command to utf-8
 	int sizeneeded = WideCharToMultiByte(CP_UTF8,0,command.c_str(),-1,NULL,0,NULL,NULL);
-	char* comm = new char[sizeneeded+1];
-	WideCharToMultiByte(CP_UTF8,0,command.c_str(),-1,comm,sizeneeded+1,NULL,NULL);
-	
-	int size = strlen(comm);
-	char* sdat = new char[5+size];
-	sprintf_s(sdat,5+size,"%04x%s",size,comm);
-	if (send(s,sdat,4+size,0) == SOCKET_ERROR) {
-		closesocket(s);
+	char* comm = new char[sizeneeded+3];
+	WideCharToMultiByte(CP_UTF8,0,command.c_str(),-1,comm,sizeneeded+3,NULL,NULL);
+
+	sizeneeded = strlen(comm);
+	comm[sizeneeded]='\n';
+	comm[sizeneeded+1]='\0';
+	if (send(s,comm,sizeneeded+1,0) == SOCKET_ERROR) {
+		Close();
 		throw wstring(L"<000D - Command send failed>");
 	}
-	bytesRead = recv(s, recbuf, 4, MSG_WAITALL);
-	if ((bytesRead==SOCKET_ERROR) || (bytesRead!=4)) {
-		closesocket(s);
-		throw wstring(L"<000A - no ack data from adb server>");
-	}
-	if (strcmpi("FAIL",recbuf)==0) {
-		// cleanup
-		recv(s,recbuf,4,MSG_WAITALL);
-		int datalen;
-		sscanf_s(recbuf,"%x",&datalen);
-		char* data = new char[datalen+1];
-		recv(s,data,datalen,MSG_WAITALL);
-		closesocket(s);
-		throw wstring(L"<000B - FAIL response from adb server>");
-	} else if (strcmpi("OKAY",recbuf)!=0) {
-		closesocket(s);
-		throw wstring(L"<000C - Bad response from adb server>");
-	}
 
-	//shutdown(s, SD_SEND);
+	// throw out initial garbage
+	wstring* line = ReadLineW();
+	while ((line!=NULL) && (*line != L"===adbfspluginÈ·")) {
+		delete line;
+		line = ReadLineW();
+	}
 };
 
 wstring* AdbCommunicator::ReadLineW() {
 	string input = "";
 	DWORD bytesRead;
 	char a;
-	bytesRead = recv(s,&a,1,MSG_WAITALL);
-	while ((bytesRead!=SOCKET_ERROR) && (bytesRead!=0) && (a!='\n')) {
+	int state=0; // check for prompt state
+	bytesRead = recv(s,&a,1,0);
+	while ((bytesRead!=SOCKET_ERROR) && (bytesRead!=0) && (a!='\n') && (input != "===adbfsplugin√©√°√≠")) {
 		input += a;
-		bytesRead = recv(s,&a,1,MSG_WAITALL);
+		bytesRead = recv(s,&a,1,0);
 	}
 	if (bytesRead==SOCKET_ERROR) {
-		closesocket(s);
+		Close();
 		int d = WSAGetLastError();
 		throw wstring(L"Socket Error");
 	}
-	if (input.empty()) {
-		closesocket(s);
+	if (input.empty() || input=="===adbfsplugin√©√°√≠") {
 		return NULL;
 	}
 	input = trim(input," \t\r\n");
@@ -173,7 +212,7 @@ wstring* AdbCommunicator::ReadLineW() {
 
 void FillStat(wstring directory, list<FileData*>* fd) {
 	try {
-		wstring command = L"shell:command busybox stat -c \"%a -%F- %g %u %s %X %Y %Z %N\" ";
+		wstring command = L"busybox stat -c \"%a -%F- %g %u %s %X %Y %Z %N\" ";
 		for (auto i = fd->begin(); i != fd->end(); i++) {
 			command.append(L" \"");
 			command.append(directory);
@@ -237,7 +276,7 @@ void GetStat(WIN32_FIND_DATAW* fs, FileData* fd) {
 list<FileData*>* DirList(wstring filename) {
 	auto* result = new list<FileData*>();
 	try {
-		AdbCommunicator::instance()->PushCommandW((wstring(L"shell:command busybox ls --color=never -1 ") + filename).c_str());
+		AdbCommunicator::instance()->PushCommandW((wstring(L"busybox ls --color=never -1 \"") + filename + L"\"").c_str());
 		wstring* line = AdbCommunicator::instance()->ReadLineW();
 		while (line!=NULL) {
 			result->push_back(new FileData(*line));

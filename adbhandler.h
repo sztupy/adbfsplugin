@@ -5,11 +5,16 @@ public:
 	static AdbCommunicator* instance() { if (!_global_adb) _global_adb = new AdbCommunicator(); return _global_adb; };
 	std::wstring* ReadLineW();
 	void PushCommandW(std::wstring command);
+	void SetSU(bool needsu);
 private:
 	AdbCommunicator();
 	~AdbCommunicator() {};
 	void ReConnect();
+	void Close();
+	void SendStringToServer(char* str);
+	void CleanBuffer(bool timeout);
 	SOCKET s;
+	bool _needsu;
 	static AdbCommunicator* _global_adb;
 };
 

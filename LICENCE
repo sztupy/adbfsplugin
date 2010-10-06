@@ -1,5 +1,17 @@
+ADB filesystem plugin for Total Commander
 Copyright (C) 2010 Zsolt Sz. Sztupák, Cancellar Informatics LLP
 
-All source and binary files are under the GPLv3 LICENCE, with the
-additional exception allowing them to be linked with all current and future
-versions of "Total Commander" by Christian Ghisler.
+All source and binary files are under the terms of the GNU Affero
+General Public License as published by the Free Software Foundation
+with the additional exception allowing them to be dynamically
+linked with all current and future versions of "Total Commander"
+by Christian Ghisler. You can use either version 3 of the License,
+or (at your option) any later version.
+
+The licence can be read here:
+  http://www.gnu.org/licenses/agpl-3.0.txt
+
+All other asset files are under the CC-BY-SA 3.0 licence.
+
+The licence can be read here:
+  http://creativecommons.org/licenses/by-sa/3.0/
