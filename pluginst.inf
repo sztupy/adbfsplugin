@@ -1,0 +1,5 @@
+[plugininstall]
+description=Android Debug Bridge filesystem plugin
+type=wfx
+file=adbfsplugin.wfx
+defaultdir=adbfsplugin
