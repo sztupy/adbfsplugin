@@ -31,9 +31,6 @@ EXPORTS
 	FsSetDefaultParams
 	FsGetPreviewBitmap
 	FsGetPreviewBitmapW
-	FsLinksToLocalFiles
-	FsGetLocalName
-	FsGetLocalNameW
 	FsContentGetSupportedField
 	FsContentGetValue
 	FsContentGetValueW
@@ -43,3 +40,5 @@ EXPORTS
 	FsContentSetValue
 	FsContentSetValueW
 	FsContentPluginUnloading
+	FsDisconnect
+	FsDisconnectW

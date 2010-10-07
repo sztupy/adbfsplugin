@@ -1,5 +1,5 @@
 // contents of fsplugin.h  version 2.0 (30.Jan.2009)
-
+#pragma once
 // ids for FsGetFile
 #define FS_FILE_OK 0
 #define FS_FILE_EXISTS 1
@@ -169,9 +169,8 @@ void __stdcall FsSetDefaultParams(FsDefaultParamStruct* dps);
 
 int __stdcall FsGetPreviewBitmap(char* RemoteName,int width,int height,HBITMAP* ReturnedBitmap);
 int __stdcall FsGetPreviewBitmapW(WCHAR* RemoteName,int width,int height,HBITMAP* ReturnedBitmap);
-BOOL __stdcall FsLinksToLocalFiles(void);
-BOOL __stdcall FsGetLocalName(char* RemoteName,int maxlen);
-BOOL __stdcall FsGetLocalNameW(WCHAR* RemoteName,int maxlen);
+BOOL __stdcall FsDisconnect(char* DisconnectRoot);
+BOOL __stdcall FsDisconnectW(WCHAR* DisconnectRoot);
 
 // ************************** content plugin extension ****************************
 
@@ -244,7 +243,6 @@ int __stdcall FsContentGetSupportedField(int FieldIndex,char* FieldName,char* Un
 int __stdcall FsContentGetValue(char* FileName,int FieldIndex,int UnitIndex,void* FieldValue,int maxlen,int flags);
 int __stdcall FsContentGetValueW(WCHAR* FileName,int FieldIndex,int UnitIndex,void* FieldValue,int maxlen,int flags);
 
-
 void __stdcall FsContentStopGetValue(char* FileName);
 void __stdcall FsContentStopGetValueW(WCHAR* FileName);
 int __stdcall FsContentGetDefaultSortOrder(int FieldIndex);
@@ -256,6 +254,10 @@ int __stdcall FsContentSetValueW(WCHAR* FileName,int FieldIndex,int UnitIndex,in
 BOOL __stdcall FsContentGetDefaultView(char* ViewContents,char* ViewHeaders,char* ViewWidths,char* ViewOptions,int maxlen);
 BOOL __stdcall FsContentGetDefaultViewW(WCHAR* ViewContents,WCHAR* ViewHeaders,WCHAR* ViewWidths,WCHAR* ViewOptions,int maxlen);
 
-
-
-
+extern int PluginNumber;
+extern tProgressProc ProgressProc;
+extern tLogProc LogProc;
+extern tRequestProc RequestProc;
+extern tProgressProcW ProgressProcW;
+extern tLogProcW LogProcW;
+extern tRequestProcW RequestProcW;
